@@ -3,49 +3,91 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.express as px
+import seaborn as sns
+from wordcloud import WordCloud, STOPWORDS
+from PIL import Image
+
+import warnings
+warnings.filterwarnings("ignore")
 
 # Thiết lập tiêu đề cho ứng dụng
-st.markdown("# 📊 Netflix Content Analysis")
+st.title("📺 Netflix Content Analysis")
 st.markdown("### Welcome to the Netflix Analysis Dashboard 🎬")
 st.markdown("""
 This app provides an analysis of Netflix content by release year, type, country, and rating.
 Explore the data, filter by various attributes, and gain insights into Netflix's content library!
 """)
 
-# Đọc tệp CSV từ GitHub
+# Đọc dữ liệu
 url = "https://raw.githubusercontent.com/dovietnhi1702/my-streamlit-app/572ffd3f7ae70143ff8e9f94392ec4d5e9796b1d/netflix_titles.csv"
-df = pd.read_csv(url)
+df_raw = pd.read_csv(url)
 
-# Xử lý dữ liệu thiếu
+# Tạo bản sao của dữ liệu thô sơ để hiển thị trước khi xử lý
+df_before = df_raw.copy()
+
+# Xử lý dữ liệu
+df = df_raw.copy()
 df['director'].fillna('Unknown', inplace=True)
-df['cast'].fillna('Unknown', inplace=True)
-df['country'].fillna('Unknown', inplace=True)
-df.dropna(subset=['date_added', 'rating', 'duration'], inplace=True)
+df['cast'].fillna('No Data', inplace=True)
+df['country'].fillna(df['country'].mode()[0], inplace=True)
+df['date_added'] = df['date_added'].fillna('No')
+df['rating'] = df['rating'].fillna('Unknown')
+df['duration'] = df['duration'].apply(lambda x: int(x.split(' ')[0]) if isinstance(x, str) else x)
+df.drop_duplicates(inplace=True)
 
-# Chuyển đổi cột 'duration' sang định dạng số phút nhất quán
-df['duration_minutes'] = df['duration'].str.extract('(\d+)').astype(float)
-df['duration_minutes'] = np.where(df['duration'].str.contains('Season'), np.nan, df['duration_minutes'])
+# Thêm cột năm và tháng cho 'date_added'
+df['year_added'] = df['date_added'].apply(lambda x: x[-4:] if x != 'No' else np.nan)
+df['month_added'] = df['date_added'].apply(lambda x: x.split(' ')[0] if x != 'No' else '')
 
-# Sidebar
-st.sidebar.title("📊 Lọc dữ liệu")
-year_selected = st.sidebar.slider("Chọn năm phát hành", min_value=int(df['release_year'].min()), max_value=int(df['release_year'].max()))
-type_selected = st.sidebar.selectbox("Chọn loại nội dung", options=df['type'].unique())
-filtered_df = df[(df['release_year'] == year_selected) & (df['type'] == type_selected)]
+# Chuyển đổi xếp hạng theo nhóm tuổi
+MR_age = {'TV-MA': 'Adults', 'R': 'Adults', 'PG-13': 'Teens', 'TV-14': 'Young Adults', 'TV-PG': 'Older Kids',
+          'NR': 'Adults', 'TV-G': 'Kids', 'TV-Y': 'Kids', 'TV-Y7': 'Older Kids', 'PG': 'Older Kids', 'G': 'Kids',
+          'NC-17': 'Adults', 'TV-Y7-FV': 'Older Kids', 'UR': 'Adults'}
+df['age_group'] = df['rating'].map(MR_age)
 
-# Hiển thị dữ liệu đã lọc
-st.write("### Dữ liệu đã lọc:")
-st.write(filtered_df)
+# Tabs hiển thị dữ liệu trước và sau khi xử lý
+tab_raw, tab_processed = st.tabs(["Dữ liệu thô sơ", "Dữ liệu đã xử lý"])
 
-# Phân chia nội dung bằng Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["Xu hướng thời gian", "Phân phối nội dung", "Phân tích quốc gia", "Xếp hạng"])
+# Thêm checkbox để hiển thị toàn bộ dữ liệu hoặc chỉ một phần
+show_full_data_raw = st.checkbox("Hiển thị toàn bộ dữ liệu thô sơ")
+show_full_data_processed = st.checkbox("Hiển thị toàn bộ dữ liệu đã xử lý")
 
-# Biểu đồ đường: Xu hướng phát hành nội dung của Netflix qua các năm
+with tab_raw:
+    st.subheader("📋 Dữ liệu Thô Sơ")
+    st.write("### Dữ liệu trước khi xử lý")
+    if show_full_data_raw:
+        st.write(df_before)  # Hiển thị toàn bộ dữ liệu nếu được chọn
+    else:
+        st.write(df_before.head())  # Chỉ hiển thị 5 hàng đầu tiên nếu không chọn
+    st.write("### Thống kê các giá trị null ban đầu")
+    st.write(df_before.isnull().sum())
+    st.write("### Tùy chọn xem dữ liệu")
+
+with tab_processed:
+    st.subheader("📋 Dữ liệu Đã Xử Lý")
+    st.write("### Dữ liệu sau khi xử lý")
+    if show_full_data_processed:
+        st.write(df)  # Hiển thị toàn bộ dữ liệu nếu được chọn
+    else:
+        st.write(df.head())  # Chỉ hiển thị 5 hàng đầu tiên nếu không chọn
+    st.write("### Thống kê các giá trị null sau xử lý")
+    st.write(df.isnull().sum())
+    st.write("### Tùy chọn xem dữ liệu")
+    st.write(df.info())
+st.title("📊 Biểu đồ trực quan hóa")
+# Tabs hiển thị biểu đồ
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "Xu hướng thời gian", "Phân phối nội dung", "Phân tích quốc gia",
+    "Xếp hạng", "Đám mây từ khóa"
+])
+
+# Biểu đồ đường: Xu hướng phát hành nội dung qua các năm
 with tab1:
-    st.subheader("📈 Xu hướng phát hành nội dung của Netflix qua các năm")
+    st.subheader("📈 Xu hướng phát hành nội dung qua các năm")
     release_trend = df['release_year'].value_counts().sort_index()
     fig, ax = plt.subplots()
     ax.plot(release_trend.index, release_trend.values, marker='o', linestyle='-', color='b')
-    ax.set_title("Xu hướng phát hành nội dung của Netflix qua các năm")
+    ax.set_title("Xu hướng phát hành nội dung qua các năm")
     ax.set_xlabel("Năm phát hành")
     ax.set_ylabel("Số lượng phát hành")
     ax.grid(True)
@@ -67,28 +109,23 @@ with tab2:
 # Biểu đồ phân tán: Mối quan hệ giữa Năm phát hành và Thời lượng
 with tab3:
     st.subheader("⏱️ Mối quan hệ giữa Năm phát hành và Thời lượng")
-    filtered_data = df.dropna(subset=['release_year', 'duration_minutes'])
-    fig = px.scatter(filtered_data, x="release_year", y="duration_minutes", title="Mối quan hệ giữa Năm phát hành và Thời lượng", color_discrete_sequence=["purple"])
+    filtered_data = df.dropna(subset=['release_year', 'duration'])
+    fig = px.scatter(filtered_data, x="release_year", y="duration", title="Mối quan hệ giữa Năm phát hành và Thời lượng", color_discrete_sequence=["purple"])
     st.plotly_chart(fig)
 
-# Biểu đồ cột: Số lượng Phim và Chương trình TV theo Quốc gia (Top 10 Quốc gia)
-with tab4:
-    st.subheader("🌍 Số lượng Phim và Chương trình TV theo Quốc gia (Top 10 Quốc gia)")
-    type_by_country = df.groupby(['country', 'type']).size().unstack().fillna(0)
-    top_countries = type_by_country.sum(axis=1).nlargest(10).index
-    type_by_country_top = type_by_country.loc[top_countries]
-    fig, ax = plt.subplots()
-    type_by_country_top.plot(kind='bar', stacked=True, ax=ax, color=['skyblue', 'lightgreen'])
-    ax.set_title("Số lượng Phim và Chương trình TV theo Quốc gia")
-    ax.set_xlabel("Quốc gia")
-    ax.set_ylabel("Số lượng nội dung")
-    ax.legend(title="Loại")
-    ax.tick_params(axis='x', rotation=45)
-    st.pyplot(fig)
+    # Heatmap phân bố nội dung theo nhóm tuổi tại 10 quốc gia hàng đầu
+    st.subheader("🌍 Heatmap phân bố nội dung theo nhóm tuổi tại 10 quốc gia hàng đầu")
+    top_countries = df['country'].value_counts().nlargest(10).index
+    filtered_data = df[df['country'].isin(top_countries)]
+    age_group_country_data = filtered_data.pivot_table(index='country', columns='age_group', aggfunc='size', fill_value=0)
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(age_group_country_data, annot=True, fmt="d", cmap="YlGnBu", linewidths=.5)
+    plt.title("Mức độ nội dung theo nhóm tuổi tại các quốc gia")
+    st.pyplot(plt)
 
 # Biểu đồ cột: Số lượng nội dung theo loại xếp hạng
-with st.expander("📊 Xem chi tiết biểu đồ xếp hạng"):
-    st.subheader("Số lượng nội dung theo loại xếp hạng (Top 10 xếp hạng)")
+with tab4:
+    st.subheader("📊 Số lượng nội dung theo loại xếp hạng (Top 10 xếp hạng)")
     rating_counts = df['rating'].value_counts().head(10)
     fig, ax = plt.subplots()
     rating_counts.plot(kind='bar', color='coral', ax=ax)
@@ -97,6 +134,18 @@ with st.expander("📊 Xem chi tiết biểu đồ xếp hạng"):
     ax.set_ylabel("Số lượng nội dung")
     ax.tick_params(axis='x', rotation=0)
     st.pyplot(fig)
+
+# Đám mây từ khóa từ các mô tả
+with tab5:
+    st.subheader("🔍 Đám mây từ khóa trong mô tả của các nội dung")
+    text = ' '.join(df['description'].astype(str))
+    stopwords = set(STOPWORDS)
+    mask = np.array(Image.open("Netflix-Logo-2014-present.jpg"))
+    wordcloud = WordCloud(stopwords=stopwords, background_color='white', mask=mask, max_words=150, colormap='OrRd').generate(text)
+    plt.figure()
+    plt.imshow(wordcloud, interpolation='bilinear')
+    plt.axis('off')
+    st.pyplot(plt)
 
 # Footer
 st.markdown("---")
