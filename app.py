@@ -20,9 +20,9 @@ df.dropna(subset=['date_added', 'rating', 'duration'], inplace=True)
 df['duration_minutes'] = df['duration'].str.extract('(\d+)').astype(float)
 df['duration_minutes'] = np.where(df['duration'].str.contains('Season'), np.nan, df['duration_minutes'])
 
-# Hiển thị một vài hàng dữ liệu
-st.write("Data Preview:")
-st.write(df.head())
+# Hiển thị toàn bộ dữ liệu với khả năng cuộn
+st.write("Full Data Preview:")
+st.dataframe(df)
 
 # Tiếp tục với các biểu đồ phân tích như trước
 # Biểu đồ đường: Xu hướng phát hành nội dung của Netflix qua các năm
